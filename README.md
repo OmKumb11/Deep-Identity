@@ -9,12 +9,12 @@ A multi-modal deep learning prototype for verifying digital integrity using **Xc
 - **XAI Heatmaps**: Grad-CAM visualization of facial artifacts.
 
 ## 👥 Collaborators
-Om Pramod Kumbhar
-Akshat Khedekar
-Sneha Singh
-Yash Gupta
-Gargi Singh
-Anika Khare
+-Om Pramod Kumbhar
+-Akshat Khedekar
+-Sneha Singh
+-Yash Gupta
+-Gargi Singh
+-Anika Khare
 
 ## 🛠️ Setup
 1. Clone the repo.

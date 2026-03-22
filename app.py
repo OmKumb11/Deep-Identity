@@ -57,24 +57,28 @@ if uploaded_file is not None:
     with col1:
         st.subheader("🔍 Identity Integrity Scan")
         faces = detector.detect_faces(rgb_frame)
-        if faces:
-            x, y, w, h = faces[0]['box']
-            face_crop = rgb_frame[y:y+h, x:x+w]
-            
-            # Predict
-            input_face = cv2.resize(face_crop, (299, 299))
-            input_face = np.expand_dims(input_face, axis=0) / 255.0
-            prediction = model.predict(input_face)[0][0]
-            
-            st.image(face_crop, caption="Extracted Facial DNA", use_container_width=True)
-            
-            if prediction > 0.5:
-                st.error(f"🚨 MANIPULATION DETECTED: {prediction:.2%}")
-            else:
-                st.success(f"✅ AUTHENTIC IDENTITY: {1-prediction:.2%}")
+    
+    if faces:
+        x, y, w, h = faces[0]['box']
+        face_crop = rgb_frame[y:y+h, x:x+w]
+        
+        # Make sure these lines are perfectly aligned!
+        input_face = cv2.resize(face_crop, (299, 299))
+        input_face = (input_face.astype(np.float32) / 127.5) - 1.0
+        input_face = np.expand_dims(input_face, axis=0)
+        
+        # Line 73: No extra spaces before 'prediction'
+        prediction_raw = model.predict(input_face)
+        prediction = float(prediction_raw[0][0])
+        
+        st.image(face_crop, caption="Extracted Facial DNA", use_container_width=True)
+        # ... the rest of your if/else logic ...
+        if prediction > 0.5:
+            st.error(f"🚨 MANIPULATION DETECTED: {prediction:.2%}")
         else:
-            st.warning("No face found in this sample.")
-
+            st.success(f"✅ AUTHENTIC IDENTITY: {1-prediction:.2%}")
+    else:
+        st.warning("No face found in this sample.")
     with col2:
         st.subheader("🌐 Scene Integrity Scan")
         # ELA Logic
@@ -92,3 +96,43 @@ if uploaded_file is not None:
 
 st.markdown("---")
 st.caption("Deep-Identity Prototype | VIT Bhopal University | 2026")
+
+# Create two ways to get the video
+st.sidebar.header("📁 Data Input")
+input_method = st.sidebar.radio("Choose Input Method", ("Upload File", "Manual Path (Faster)"))
+
+uploaded_file = None
+manual_path = ""
+
+if input_method == "Upload File":
+    uploaded_file = st.file_uploader("Choose a video...", type=['mp4', 'avi'])
+else:
+    manual_path = st.sidebar.text_input("Paste E: drive path here", placeholder="E:\\archive\\...\\000.mp4")
+
+# Process the data
+if uploaded_file or manual_path:
+    if manual_path:
+        # Load directly from E: drive bypassing the file picker
+        cap = cv2.VideoCapture(manual_path)
+        ret, frame = cap.read()
+        cap.release()
+        st.info(f"Successfully loaded: {manual_path.split('\\')[-1]}")
+    else:
+        # Use the uploaded file bytes
+        # ... (your existing uploaded_file logic) ...
+        if uploaded_file.name.lower().endswith(('.mp4', '.avi', '.mov')):
+            # We must save to a temp file because cv2.VideoCapture requires a file path
+            with open("temp_upload_file.mp4", "wb") as f:
+                f.write(uploaded_file.read())
+            
+            cap = cv2.VideoCapture("temp_upload_file.mp4")
+            ret, frame = cap.read()
+            cap.release()
+            
+        # 2. If it's a standard image file
+        else:
+            file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+            frame = cv2.imdecode(file_bytes, 1)
+            
+        if frame is not None:
+            st.sidebar.success(f"File '{uploaded_file.name}' loaded successfully!")

@@ -6,6 +6,14 @@ import streamlit as st
 from PIL import Image, ImageChops, ImageEnhance
 from mtcnn import MTCNN
 import tempfile
+def download_model():
+    if not os.path.exists("best_model.h5"):
+        import urllib.request
+        url = "https://huggingface.co/Hades111106/deep-identity/resolve/main/best_model.h5"
+        with st.spinner("Downloading model from HuggingFace..."):
+            urllib.request.urlretrieve(url, "best_model.h5")
+
+download_model()
 
 os.environ["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"
 

@@ -1,0 +1,10 @@
+metric,value
+overall_auc,0.9504
+eer,0.1158
+accuracy,0.8891
+auc_DeepFakeDetection,1.0000
+auc_Deepfakes,0.7767
+auc_Face2Face,0.9196
+auc_FaceShifter,0.9999
+auc_FaceSwap,0.9998
+auc_NeuralTextures,0.9999

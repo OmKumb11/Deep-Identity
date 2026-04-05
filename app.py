@@ -4,135 +4,128 @@ import numpy as np
 import tensorflow as tf
 from mtcnn import MTCNN
 from PIL import Image, ImageChops, ImageEnhance
-import matplotlib.pyplot as plt
+import os
 
-# 1. Page Configuration
-st.set_page_config(page_title="Deep-Identity Forensic Suite", layout="wide")
-st.title("🛡️ Deep-Identity: Neural Forensic Dashboard")
-st.markdown("---")
+# --- PAGE CONFIGURATION ---
+st.set_page_config(page_title="Deep-Identity: Forensic Suite", layout="wide")
 
-# 2. Load Models (Cached for speed)
+# 1. CACHED ENGINE LOADING 
+# This stops the "infinite loading" by keeping the model in RAM
 @st.cache_resource
 def load_forensic_engine():
-    # Build Skeleton
-    base = tf.keras.applications.Xception(weights=None, include_top=False, input_shape=(299, 299, 3))
-    x = tf.keras.layers.GlobalAveragePooling2D()(base.output)
-    x = tf.keras.layers.Dense(1, activation='sigmoid')(x)
-    model = tf.keras.models.Model(inputs=base.input, outputs=x)
+    # Update this path if you move your weights file
+    weights_path = "xception_weights_tf_dim_ordering_tf_kernels_notop.h5"
     
-    # Load Weights (Update path if needed)
-    weights_path = r"E:\Deep_Detection\xception_weights_tf_dim_ordering_tf_kernels_notop.h5"
-    model.load_weights(weights_path, by_name=True, skip_mismatch=True)
-    return model, MTCNN()
-
-model, detector = load_forensic_engine()
-
-# 3. Sidebar Stats
-with st.sidebar:
-    st.header("System Status")
-    st.success("Core Engine: Xception-V1")
-    st.info("Dataset: FaceForensics++ (C23)")
-    st.warning("Hardware: RTX 3050 (Inference Active)")
-    quality = st.slider("ELA Sensitivity", 50, 95, 90)
-
-# 4. File Uploader
-uploaded_file = st.file_uploader("Upload Video or Image for Forensic Audit", type=['mp4', 'jpg', 'png', 'jpeg'])
-
-if uploaded_file is not None:
-    # If it's a video, we grab the first frame
-    if uploaded_file.name.endswith('.mp4'):
-        tfile = open("temp_vid.mp4", "wb")
-        tfile.write(uploaded_file.read())
-        cap = cv2.VideoCapture("temp_vid.mp4")
-        ret, frame = cap.read()
-        cap.release()
-    else:
-        file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-        frame = cv2.imdecode(file_bytes, 1)
-
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    # Build Xception Skeleton
+    base_model = tf.keras.applications.Xception(
+        weights=None, 
+        input_shape=(299, 299, 3), 
+        include_top=False, 
+        pooling='avg'
+    )
+    outputs = tf.keras.layers.Dense(1, activation='sigmoid')(base_model.output)
+    model = tf.keras.Model(inputs=base_model.input, outputs=outputs)
     
-    col1, col2 = st.columns(2)
+    if os.path.exists(weights_path):
+        model.load_weights(weights_path)
     
-    with col1:
-        st.subheader("🔍 Identity Integrity Scan")
-        faces = detector.detect_faces(rgb_frame)
-    
-    if faces:
-        x, y, w, h = faces[0]['box']
-        face_crop = rgb_frame[y:y+h, x:x+w]
-        
-        # Make sure these lines are perfectly aligned!
-        input_face = cv2.resize(face_crop, (299, 299))
-        input_face = (input_face.astype(np.float32) / 127.5) - 1.0
-        input_face = np.expand_dims(input_face, axis=0)
-        
-        # Line 73: No extra spaces before 'prediction'
-        prediction_raw = model.predict(input_face)
-        prediction = float(prediction_raw[0][0])
-        
-        st.image(face_crop, caption="Extracted Facial DNA", use_container_width=True)
-        # ... the rest of your if/else logic ...
-        if prediction > 0.5:
-            st.error(f"🚨 MANIPULATION DETECTED: {prediction:.2%}")
-        else:
-            st.success(f"✅ AUTHENTIC IDENTITY: {1-prediction:.2%}")
-    else:
-        st.warning("No face found in this sample.")
-    with col2:
-        st.subheader("🌐 Scene Integrity Scan")
-        # ELA Logic
-        original = Image.fromarray(rgb_frame)
-        original.save("ela_temp.jpg", 'JPEG', quality=quality)
-        temporary = Image.open("ela_temp.jpg")
-        diff = ImageChops.difference(original, temporary)
-        extrema = diff.getextrema()
-        max_diff = max([ex[1] for ex in extrema])
-        scale = 255.0 / (max_diff if max_diff > 0 else 1)
-        ela_map = ImageEnhance.Brightness(diff).enhance(scale)
-        
-        st.image(ela_map, caption="Environmental Noise Map (ELA)", use_container_width=True)
-        st.write("Look for high-contrast 'glow' in backgrounds to spot object splicing.")
+    detector = MTCNN()
+    return model, detector
 
+# 2. SCENE INTEGRITY LOGIC (ELA)
+def run_scene_integrity_scan(image, quality=90):
+    temp_file = 'ela_temp.jpg'
+    if isinstance(image, np.ndarray):
+        image = Image.fromarray(image)
+    
+    image.save(temp_file, 'JPEG', quality=quality)
+    temp_image = Image.open(temp_file)
+    
+    ela_image = ImageChops.difference(image, temp_image)
+    extrema = ela_image.getextrema()
+    max_diff = max([ex[1] for ex in extrema])
+    if max_diff == 0: max_diff = 1
+    scale = 255.0 / max_diff
+    
+    return ImageEnhance.Brightness(ela_image).enhance(scale)
+
+# --- USER INTERFACE ---
+st.title("🛡️ Deep-Identity: Neural Forensic Suite")
 st.markdown("---")
-st.caption("Deep-Identity Prototype | VIT Bhopal University | 2026")
 
-# Create two ways to get the video
+# Sidebar Setup
 st.sidebar.header("📁 Data Input")
-input_method = st.sidebar.radio("Choose Input Method", ("Upload File", "Manual Path (Faster)"))
+input_method = st.sidebar.radio("Choose Input Method", ("Upload File", "Manual Path (Bypass Drive Lag)"))
+
+# Initialize the "Brain"
+model, detector = load_forensic_engine()
 
 uploaded_file = None
 manual_path = ""
+frame = None
 
+# Handle Inputs
 if input_method == "Upload File":
-    uploaded_file = st.file_uploader("Choose a video...", type=['mp4', 'avi'])
+    uploaded_file = st.sidebar.file_uploader("Choose a sample...", type=['mp4', 'avi', 'jpg', 'png'])
 else:
-    manual_path = st.sidebar.text_input("Paste E: drive path here", placeholder="E:\\archive\\...\\000.mp4")
+    manual_path = st.sidebar.text_input("Paste Path here (e.g. E:\\archive\\...)", placeholder="E:\\...")
 
-# Process the data
+# --- FORENSIC PROCESSING ---
 if uploaded_file or manual_path:
-    if manual_path:
-        # Load directly from E: drive bypassing the file picker
-        cap = cv2.VideoCapture(manual_path)
-        ret, frame = cap.read()
-        cap.release()
-        st.info(f"Successfully loaded: {manual_path.split('\\')[-1]}")
-    else:
-        # Use the uploaded file bytes
-        # ... (your existing uploaded_file logic) ...
-        if uploaded_file.name.lower().endswith(('.mp4', '.avi', '.mov')):
-            # We must save to a temp file because cv2.VideoCapture requires a file path
-            with open("temp_upload_file.mp4", "wb") as f:
-                f.write(uploaded_file.read())
-            
-            cap = cv2.VideoCapture("temp_upload_file.mp4")
+    with st.spinner("⏳ Analyzing Neural Artifacts..."):
+        # Load the Frame
+        if manual_path:
+            cap = cv2.VideoCapture(manual_path)
             ret, frame = cap.read()
             cap.release()
-            
-        # 2. If it's a standard image file
-        else:
-            file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-            frame = cv2.imdecode(file_bytes, 1)
-            
+        elif uploaded_file:
+            if uploaded_file.name.lower().endswith(('.mp4', '.avi')):
+                with open("temp_sample.mp4", "wb") as f:
+                    f.write(uploaded_file.read())
+                cap = cv2.VideoCapture("temp_sample.mp4")
+                ret, frame = cap.read()
+                cap.release()
+            else:
+                file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+                frame = cv2.imdecode(file_bytes, 1)
+
         if frame is not None:
-            st.sidebar.success(f"File '{uploaded_file.name}' loaded successfully!")
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            col1, col2 = st.columns(2)
+
+            # COLUMN 1: AI IDENTITY AUDIT
+            with col1:
+                st.subheader("🔍 Identity Integrity Scan")
+                faces = detector.detect_faces(rgb_frame)
+                
+                if faces:
+                    x, y, w, h = faces[0]['box']
+                    x, y = max(0, x), max(0, y) # Bounds safety
+                    face_crop = rgb_frame[y:y+h, x:x+w]
+                    
+                    # Preprocessing for Xception-Net (-1 to 1)
+                    input_face = cv2.resize(face_crop, (299, 299))
+                    input_face = (input_face.astype(np.float32) / 127.5) - 1.0
+                    input_face = np.expand_dims(input_face, axis=0)
+                    
+                    prediction_raw = model.predict(input_face)
+                    prediction = float(prediction_raw[0][0])
+                    
+                    st.image(face_crop, caption="Extracted Facial DNA", use_container_width=True)
+                    
+                    if prediction > 0.5:
+                        st.error(f"🚨 MANIPULATION DETECTED: {prediction:.2%}")
+                    else:
+                        st.success(f"✅ AUTHENTIC IDENTITY: {1-prediction:.2%}")
+                else:
+                    st.warning("No biometric signatures found in frame.")
+
+            # COLUMN 2: ELA SCENE SCAN
+            with col2:
+                st.subheader("🌐 Scene Integrity Scan")
+                ela_map = run_scene_integrity_scan(rgb_frame)
+                st.image(rgb_frame, caption="Original Capture", use_container_width=True)
+                st.image(ela_map, caption="Environmental Noise Map (ELA)", use_container_width=True)
+                st.info("Visualizes compression inconsistencies in the background.")
+        else:
+            st.error("Input Failure: Check your file path or format.")

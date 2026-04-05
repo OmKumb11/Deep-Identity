@@ -53,3 +53,15 @@ Deep-Identity/
 ├── eval_results.csv        # Test set metrics
 └── requirements.txt
 ```
+
+## Notes
+- `best_model.h5` is not included due to file size — train using `step3_train.py`
+- Dataset not included — request access at [FaceForensics++](https://github.com/ondyari/FaceForensics)
+
+## Model Download
+
+The trained model is hosted on HuggingFace due to file size:
+
+**[Download best_model.h5](https://huggingface.co/Hades111106/deep-identity)**
+
+After downloading, place `best_model.h5` in the root of the project folder before running the app.
